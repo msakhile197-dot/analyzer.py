@@ -54,14 +54,14 @@ def liquidity_sweep(df, direction, lookback=20):
         return last["low"] < prior["low"].min() and last["close"] > prior["low"].min()
     return last["high"] > prior["high"].max() and last["close"] < prior["high"].max()
 
-
 def structure_break(df, direction):
     """Close beyond the most recent swing in the trade direction (BOS or CHoCH)."""
-    sh, sl = swing_points(df.iloc[:-1])
+    d = df.iloc[:-1]
+    sh, sl = swing_points(d)
     if direction == "long":
-        level = df["high"][sh].iloc[-1] if sh.any() else None
+        level = d["high"][sh].iloc[-1] if sh.any() else None
         return level is not None and df["close"].iloc[-1] > level
-    level = df["low"][sl].iloc[-1] if sl.any() else None
+    level = d["low"][sl].iloc[-1] if sl.any() else None
     return level is not None and df["close"].iloc[-1] < level
 
 
