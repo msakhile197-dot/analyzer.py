@@ -1,107 +1,95 @@
 import streamlit as st
 from analyzer import analyze
 
-st.set_page_config(
-    page_title="SMC Analyzer",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="SMC Analyzer", layout="centered",
+                   initial_sidebar_state="collapsed")
 
-# Mobile-focused styling: tighter padding, larger tap targets, readable text
+# Mobile styling with bottom padding so the footer clears the Streamlit bar
 st.markdown("""
 <style>
     .block-container {
         padding-top: 1rem;
         padding-left: 0.8rem;
         padding-right: 0.8rem;
-        padding-bottom: 2rem;
+        padding-bottom: 6rem;
     }
     h1 {font-size: 1.6rem !important;}
     h2, h3 {font-size: 1.2rem !important;}
     div[data-testid="stMetricValue"] {font-size: 1.3rem;}
-    div[data-testid="stMetricLabel"] {font-size: 0.85rem;}
     .stButton > button {
         width: 100%;
         min-height: 3rem;
         font-size: 1.05rem;
         border-radius: 10px;
     }
-    .stTextInput input, .stNumberInput input {
-        min-height: 2.8rem;
-        font-size: 1rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
+# Readable names for Yahoo Finance tickers
+SYMBOL_NAMES = {
+    "EURUSD=X": "EUR/USD",
+    "GBPUSD=X": "GBP/USD",
+    "USDJPY=X": "USD/JPY",
+    "AUDUSD=X": "AUD/USD",
+    "USDCAD=X": "USD/CAD",
+    "USDCHF=X": "USD/CHF",
+    "NZDUSD=X": "NZD/USD",
+    "XAUUSD=X": "XAU/USD (Gold)",
+    "BTC-USD": "BTC/USD",
+    "ETH-USD": "ETH/USD",
+    "^GSPC": "S&P 500",
+    "^NDX": "NASDAQ 100",
+}
+
 st.title("SMC Market Analyzer")
-st.caption("Top-down analysis, price action, and smart money concepts.")
+st.caption("Price action, top-down, and Smart Money Concepts")
 
-# ---------- Inputs (on the main screen, not a sidebar) ----------
-symbol = st.text_input("Symbol", value="EURUSD=X",
-                       help="Examples: EURUSD=X, GC=F, BTC-USD, AAPL")
-
-col1, col2 = st.columns(2)
-with col1:
-    account = st.number_input("Account size", min_value=100.0,
-                              value=10000.0, step=100.0)
-with col2:
-    risk_pct = st.number_input("Risk %", min_value=0.1, max_value=10.0,
-                               value=1.0, step=0.1)
-
+symbol = st.text_input("Symbol (Yahoo Finance ticker)", value="EURUSD=X")
+account = st.number_input("Account size ($)", min_value=100.0,
+                          value=10000.0, step=100.0)
+risk_pct = st.number_input("Risk per trade (%)", min_value=0.1,
+                           max_value=5.0, value=1.0, step=0.1)
 min_rr = st.number_input("Minimum risk-reward", min_value=1.0,
                          max_value=10.0, value=2.0, step=0.5)
 
-run = st.button("Analyze Market", type="primary")
+if st.button("Analyze Market", type="primary"):
+    with st.spinner("Reading the market..."):
+        try:
+            res = analyze(symbol, account, risk_pct, min_rr)
+        except Exception as e:
+            st.error(f"Could not analyze {symbol}: {e}")
+            st.stop()
 
-# ---------- Results ----------
-if run:
-    if not symbol.strip():
-        st.error("Please enter a symbol.")
+    name = SYMBOL_NAMES.get(res["symbol"], res["symbol"])
+    st.subheader(name)
+
+    signal = res["signal"]
+    if signal == "NO TRADE":
+        st.warning(f"Signal: {signal}")
     else:
-        with st.spinner("Analyzing multiple timeframes..."):
-            try:
-                res = analyze(symbol.strip().upper(),
-                              account=account,
-                              risk_pct=risk_pct,
-                              min_rr=min_rr)
-            except Exception as e:
-                st.error(f"Analysis failed: {e}")
-                st.stop()
+        st.success(f"Signal: {signal}")
 
-        st.subheader(f"{res['symbol']}")
+    st.metric("Daily bias", res["htf_bias"].capitalize())
+    if "price" in res:
+        st.metric("Current price", res["price"])
 
-        signal = res.get("signal", "NO TRADE")
-        if signal == "NO TRADE":
-            st.warning(f"Signal: NO TRADE")
-        else:
-            st.success(f"Signal: {signal}")
+    st.markdown("#### Checklist")
+    for item, value in res.get("checklist", {}).items():
+        st.write(f"**{item}:** {value}")
 
-        st.write(f"**Daily bias:** {res.get('htf_bias', 'n/a').title()}")
-        if "price" in res:
-            st.write(f"**Current price:** {res['price']}")
-        st.info(res.get("reason", ""))
+    if res.get("reason"):
+        st.info(res["reason"])
 
-        if "checklist" in res and res["checklist"]:
-            st.markdown("### Confirmation Checklist")
-            for item, value in res["checklist"].items():
-                if isinstance(value, bool):
-                    icon = "Yes" if value else "No"
-                else:
-                    icon = value
-                st.write(f"- **{item}:** {icon}")
+    if signal != "NO TRADE":
+        st.markdown("#### Trade Plan")
+        c1, c2 = st.columns(2)
+        c1.metric("Entry", res["entry"])
+        c2.metric("Stop loss", res["stop_loss"])
+        c1.metric("Take profit", res["take_profit"])
+        c2.metric("Risk-reward", res["rr"])
+        st.metric("Risk amount ($)", res["risk_amount"])
+        st.metric("Position size (units)", res["units"])
 
-        if signal != "NO TRADE":
-            st.markdown("### Trade Plan")
-            m1, m2 = st.columns(2)
-            m1.metric("Entry", res["entry"])
-            m2.metric("Stop Loss", res["stop_loss"])
-            m3, m4 = st.columns(2)
-            m3.metric("Take Profit", res["take_profit"])
-            m4.metric("Risk:Reward", f"1:{res['rr']}")
-            m5, m6 = st.columns(2)
-            m5.metric("Risk Amount", f"{res['risk_amount']}")
-            m6.metric("Position Size (units)", res["units"])
-
-st.divider()
+st.markdown("---")
 st.caption("For education only. This is not financial advice. "
-           "Always backtest and never risk money you cannot afford to lose.")
+           "Always test on a demo account first.")
